@@ -8,6 +8,9 @@ import re
 import webbrowser
 
 import imgviz
+
+from natsort import natsorted  # Huan
+
 from qtpy import QtCore
 from qtpy.QtCore import Qt
 from qtpy import QtGui
@@ -57,7 +60,12 @@ class MainWindow(QtWidgets.QMainWindow):
         output=None,
         output_file=None,
         output_dir=None,
+
+
     ):
+
+        print("hi, huan")
+
         if output is not None:
             logger.warning(
                 "argument output is deprecated, use output_file instead"
@@ -108,6 +116,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.labelList = LabelListWidget()
         self.lastOpenDir = None
 
+
+        ##### attribute
+        self.attri_dock = QtWidgets.QDockWidget("Attributes", self)
+        self.attri_dock.setObjectName("Attributes")
+        self.attri_widget = QtWidgets.QTableWidget()
+        self.attri_dock.setWidget(self.attri_widget)
+        headerText = ['Attribute', 'Value']
+        self.attri_widget.setColumnCount(len(headerText))
+        self.attri_widget.setHorizontalHeaderLabels(headerText)
+
+
         self.flag_dock = self.flag_widget = None
         self.flag_dock = QtWidgets.QDockWidget(self.tr("Flags"), self)
         self.flag_dock.setObjectName("Flags")
@@ -116,6 +135,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.loadFlags({k: False for k in config["flags"]})
         self.flag_dock.setWidget(self.flag_widget)
         self.flag_widget.itemChanged.connect(self.setDirty)
+
+
+
 
         self.labelList.itemSelectionChanged.connect(self.labelSelectionChanged)
         self.labelList.itemDoubleClicked.connect(self.editLabel)
@@ -199,10 +221,15 @@ class MainWindow(QtWidgets.QMainWindow):
             if self._config[dock]["show"] is False:
                 getattr(self, dock).setVisible(False)
 
-        self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock)
+
+
         self.addDockWidget(Qt.RightDockWidgetArea, self.label_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.shape_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock)
+
+        self.addDockWidget(Qt.RightDockWidgetArea, self.attri_dock)  # huan
+
 
         # Actions
         action = functools.partial(utils.newAction, self)
@@ -322,6 +349,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tr("Start drawing polygons"),
             enabled=False,
         )
+
+        # createMode = action(
+        #     self.tr("Create Polygons_huan"),
+        #     lambda: self.toggleDrawMode(False, createMode="polygon"),
+        #     shortcuts["create_polygon"],
+        #     "objects",
+        #     self.tr("Start drawing polygons"),
+        #     enabled=False,
+        # )
+
+
         createRectangleMode = action(
             self.tr("Create Rectangle"),
             lambda: self.toggleDrawMode(False, createMode="rectangle"),
@@ -669,6 +707,7 @@ class MainWindow(QtWidgets.QMainWindow):
         utils.addActions(
             self.menus.view,
             (
+                self.attri_dock.toggleViewAction(),
                 self.flag_dock.toggleViewAction(),
                 self.label_dock.toggleViewAction(),
                 self.shape_dock.toggleViewAction(),
@@ -1989,5 +2028,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 if file.lower().endswith(tuple(extensions)):
                     relativePath = osp.join(root, file)
                     images.append(relativePath)
-        images.sort(key=lambda x: x.lower())
+        # images.sort(key=lambda x: x.lower())
+
+        images = natsorted(images) # Huan
+
         return images
