@@ -74,6 +74,7 @@ class LabelFile(object):
             "imagePath",
             "shapes",  # polygonal annotations
             "flags",  # image level flags
+            "attributes",
             "imageHeight",
             "imageWidth",
         ]
@@ -83,6 +84,7 @@ class LabelFile(object):
             "group_id",
             "shape_type",
             "flags",
+            "attributes",
         ]
         try:
             with open(filename, "r") as f:
@@ -125,6 +127,7 @@ class LabelFile(object):
                     shape_type=s.get("shape_type", "polygon"),
                     flags=s.get("flags", {}),
                     group_id=s.get("group_id"),
+                    attributes = s.get("attributes", {}),
                     other_data={
                         k: v for k, v in s.items() if k not in shape_keys
                     },

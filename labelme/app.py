@@ -7,6 +7,8 @@ import os.path as osp
 import re
 import webbrowser
 
+
+
 import imgviz
 
 from natsort import natsorted  # Huan
@@ -16,9 +18,16 @@ from qtpy.QtCore import Qt
 from qtpy import QtGui
 from qtpy import QtWidgets
 
+from PyQt5.QtWidgets import QWidget, QApplication, QPushButton, QMessageBox, QLabel, QCheckBox
+from PyQt5.QtWidgets import *
+
 from labelme import __appname__
 from labelme import PY2
 from labelme import QT5
+
+import sys
+
+
 
 from . import utils
 from labelme.config import get_config
@@ -102,7 +111,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._noSelectionSlot = False
 
-        # Main widgets and related state.
+        # Main widgets and related state.  Change lables for a selected polygon.
         self.labelDialog = LabelDialog(
             parent=self,
             labels=self._config["labels"],
@@ -116,8 +125,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.labelList = LabelListWidget()
         self.lastOpenDir = None
 
+        self.ontology_path =  r'X:\My Drive\Research\StreetGraph\documents\street_ontology.owl'
+        self.onto = utils.owl.loadOWL(self.ontology_path)
+
 
         ##### attribute
+        self.init_attributes = ['step_cnt', "storey_cnt", 'color', 'shape', "size", "length", 'width', 'height', 'direction', 'texture', 'material']
         self.attri_dock = QtWidgets.QDockWidget("Attributes", self)
         self.attri_dock.setObjectName("Attributes")
         self.attri_widget = QtWidgets.QTableWidget()
@@ -125,8 +138,17 @@ class MainWindow(QtWidgets.QMainWindow):
         headerText = ['Attribute', 'Value']
         self.attri_widget.setColumnCount(len(headerText))
         self.attri_widget.setHorizontalHeaderLabels(headerText)
+        self.initAttributes()
+        self.previousItem = []
+        self.previousItemIndex = []
+        # self.attri_widget.itemChanged.connect(self.attributesChanged)
+        self.attri_widget.currentItemChanged.connect(self.attributesChanged)
 
 
+        # self.previousItemIdx.append(self.labelList.selectedIndexes()[-1])
+        # self.attri_widget.
+
+        # flags
         self.flag_dock = self.flag_widget = None
         self.flag_dock = QtWidgets.QDockWidget(self.tr("Flags"), self)
         self.flag_dock.setObjectName("Flags")
@@ -138,7 +160,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
-
+        # labellist of shapes
         self.labelList.itemSelectionChanged.connect(self.labelSelectionChanged)
         self.labelList.itemDoubleClicked.connect(self.editLabel)
         self.labelList.itemChanged.connect(self.labelItemChanged)
@@ -149,6 +171,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.shape_dock.setObjectName("Labels")
         self.shape_dock.setWidget(self.labelList)
 
+
+        # overall label list
         self.uniqLabelList = UniqueLabelQListWidget()
         self.uniqLabelList.setToolTip(
             self.tr(
@@ -930,6 +954,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.otherData = None
         self.canvas.resetState()
 
+
+    # def getPreviousItem(self):
+    #     items = self.labelList.selectedItems()
+    #     if items:
+    #         return items[0]
+    #     return None
+
     def currentItem(self):
         items = self.labelList.selectedItems()
         if items:
@@ -1134,6 +1165,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actions.copy.setEnabled(n_selected)
         self.actions.edit.setEnabled(n_selected == 1)
 
+    def setLabel(self, shape, row):
+        if shape.group_id is None:
+            text = shape.label
+        else:
+            text = "{} ({})".format(shape.label, shape.group_id)
+        label_list_item = LabelListWidgetItem(text, shape)
+        self.labelList.setWidgetItem(label_list_item, row)
+
+
     def addLabel(self, shape):
         if shape.group_id is None:
             text = shape.label
@@ -1192,6 +1232,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.labelList.clearSelection()
         self._noSelectionSlot = False
         self.canvas.loadShapes(shapes, replace=replace)
+        self.labelList.selectionMode()
 
     def loadLabels(self, shapes):
         s = []
@@ -1202,6 +1243,7 @@ class MainWindow(QtWidgets.QMainWindow):
             flags = shape["flags"]
             group_id = shape["group_id"]
             other_data = shape["other_data"]
+            attributes = shape['attributes']
 
             shape = Shape(
                 label=label, shape_type=shape_type, group_id=group_id,
@@ -1231,7 +1273,19 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setCheckState(Qt.Checked if flag else Qt.Unchecked)
             self.flag_widget.addItem(item)
 
-    def saveLabels(self, filename):
+    def readAttributDock(self):
+        rowCnt = self.attri_widget.rowCount()
+        res = {}
+        for i in range(rowCnt):
+            attribute = self.attri_widget.item(i, 0).text()
+            value     = self.attri_widget.item(i, 1).text()
+            value = str(value)
+            if value.strip(" ") != "":
+                res[attribute] = value
+
+        return res
+
+    def saveLabels(self, filename):  # save json results
         lf = LabelFile()
 
         def format_shape(s):
@@ -1243,6 +1297,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     group_id=s.group_id,
                     shape_type=s.shape_type,
                     flags=s.flags,
+                    attributes=s.attributes
                 )
             )
             return data
@@ -1293,7 +1348,89 @@ class MainWindow(QtWidgets.QMainWindow):
             self.addLabel(shape)
         self.setDirty()
 
+    def attributesChanged(self):
+        if len(self.labelList.selectedItems()) < 1:
+            reply = QtWidgets.QMessageBox.information(self, 'Hello', "Please select a polygon.",
+                                                      QMessageBox.Ok | QMessageBox.Close, QMessageBox.Close)
+            return
+
+        else:
+            currentItem = self.currentItem()  # not a shape
+            currentItemIndex = self.labelList.selectedIndexes()[0].row()
+            attributes = self.readAttributDock()
+
+            shape1 = currentItem.shape()
+            # attributes = {"color": 33}
+            shape1.attributes = attributes
+
+            print("shape1.attributes:", shape1.attributes)
+
+        self.setLabel(shape1, currentItemIndex)
+
+        print("self.labelList[currentItemIndex].attributes:", self.labelList[currentItemIndex].shape().attributes)
+
+
+        print("attributesChanged.")
+        # self.setDirty()
+
     def labelSelectionChanged(self):
+        if len(self.previousItem) > 0:
+
+            try:
+            # self.previousItem.pop().attributes = self.readAttributDock()
+                previousItem = self.previousItem.pop()
+                print("previousItem:", previousItem.shape().label)
+                preIndex = self.previousItemIndex.pop()
+                print("previousItemIndex:", preIndex)
+                attributes = self.readAttributDock()
+
+                shape1 = previousItem.shape()
+                # attributes = {"color": 33}
+                shape1.attributes = attributes
+
+
+                print("shape1.attributes:", shape1.attributes)
+
+                self.setLabel(shape1, preIndex)
+
+                # self.labelList[preIndex].setData(previousItem.clone().shape(), Qt.UserRole)
+
+                # print("self.labelList[self.previousItemIndex.pop()].attributes:", self.labelList[preIndex].shape().attributes)
+                # clean
+                # rowCnt = self.attri_widget.rowCount()
+                # for i in range(rowCnt):
+                #     self.attri_widget.setItem(i, 1, QTableWidgetItem(""))
+
+                # self.labelList[preIndex] = self.labelList[preIndex].setShape(previousItem.shape())
+
+
+                # print("new attributes:", shape1.attributes)
+                # print("self.labelList[-1].shape().attributes:",
+                #   self.labelList[self.labelList.model().rowCount() - 1].shape().attributes)
+                # print(self.labelList.model().rowCount())
+
+                # print("self.labelList[0].shape().attributes:", self.labelList[0].shape().attributes)
+                # print("self.labelList[1].shape().attributes:", self.labelList[1].shape().attributes)
+
+
+                # self.labelList.setItem(self.labelList.rowCount(),  previousItem)
+
+
+
+            except Exception as e:
+                print(e)
+
+            # self.labelList[self.previousItemIndex.pop()].setShape(previousItem)
+            # self.labelList[2].data.attributes
+
+
+            # print("self.labelList[2].data.attributes: ", self.labelList[2].data.attributes)
+
+
+
+
+
+
         if self._noSelectionSlot:
             return
         if self.canvas.editing():
@@ -1304,6 +1441,37 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.canvas.selectShapes(selected_shapes)
             else:
                 self.canvas.deSelectShape()
+
+        self.previousItem.append(self.currentItem()) # not a shape
+        self.previousItemIndex.append(self.labelList.selectedIndexes()[0].row())
+
+        # print("self.currentItem.label:", self.currentItem().shape().label)
+        # print("self.currentItem.attributes:", self.currentItem().shape().attributes)
+
+
+
+        # current_class = self.currentItem().shape().label
+        # attributes = utils.owl.getTextAttribtes(current_class)
+
+        #
+        # reply = QtWidgets.QMessageBox.information(self, 'Hello', str(current_class),
+        #                                           QMessageBox.Ok | QMessageBox.Close, QMessageBox.Close)
+
+        currentItem = self.currentItem()  # not a shape
+        currentItemIndex = self.labelList.selectedIndexes()[0].row()
+        attributes = self.readAttributDock()
+
+        shape1 = currentItem.shape()
+        # attributes = {"color": 33}
+        shape1.attributes = attributes
+
+        print("shape1.attributes:", shape1.attributes)
+
+    def showItemAttributes(self):
+        currentItem = self.currentItem()  # not a shape
+        currentItemIndex = self.labelList.selectedIndexes()[0].row()
+        attributes = currentItem.shape().attributes
+
 
     def labelItemChanged(self, item):
         shape = item.shape()
@@ -1320,11 +1488,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         position MUST be in global coordinates.
         """
+
         items = self.uniqLabelList.selectedItems()
         text = None
         if items:
             text = items[0].data(Qt.UserRole)
         flags = {}
+        attributes = {}
         group_id = None
         if self._config["display_label_popup"] or not text:
             previous_text = self.labelDialog.edit.text()
@@ -1343,6 +1513,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if text:
             self.labelList.clearSelection()
             shape = self.canvas.setLastLabel(text, flags)
+
             shape.group_id = group_id
             self.addLabel(shape)
             self.actions.editMode.setEnabled(True)
@@ -1352,6 +1523,8 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.canvas.undoLastLine()
             self.canvas.shapesBackups.pop()
+
+        self.labelList.selectItem(self.labelList.model().rowCount() - 1)
 
     def scrollRequest(self, delta, orientation):
         units = -delta * 0.1  # natural scroll
@@ -2033,3 +2206,54 @@ class MainWindow(QtWidgets.QMainWindow):
         images = natsorted(images) # Huan
 
         return images
+
+    # huan
+    def initAttributes(self):
+
+        # row_cnt = self.attri_widget.rowCount()
+        self.attri_widget.setRowCount(len(self.init_attributes))
+        for idx, attri in enumerate(self.init_attributes):
+            self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
+            self.attri_widget.setItem(idx, 1, QTableWidgetItem(""))
+        # QTableWidgetItem("Name")
+        # self.attri_widget.horizontalHeader().setStretchLastSection(True)
+        self.attri_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+    def loadAttributes(self, attributes):
+        s = []
+        for attri in attributes:
+            label = shape["label"]
+            points = shape["points"]
+            shape_type = shape["shape_type"]
+            flags = shape["flags"]
+            group_id = shape["group_id"]
+            other_data = shape["other_data"]
+            attributes = shape['attributes']
+
+            shape = Shape(
+                label=label, shape_type=shape_type, group_id=group_id,
+            )
+            for x, y in points:
+                shape.addPoint(QtCore.QPointF(x, y))
+            shape.close()
+
+            default_flags = {}
+            if self._config["label_flags"]:
+                for pattern, keys in self._config["label_flags"].items():
+                    if re.match(pattern, label):
+                        for key in keys:
+                            default_flags[key] = False
+            shape.flags = default_flags
+            shape.flags.update(flags)
+            shape.other_data = other_data
+
+            s.append(shape)
+        self.loadShapes(s)
+
+        init_attributes = ['step_cnt', "storey_cnt", 'color', 'shape', "size", "length", 'width', 'height', 'direction', 'texture', 'material']
+        self.attri_widget.setRowCount(len(init_attributes))
+        for idx, attri in enumerate(init_attributes):
+            self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
+        # QTableWidgetItem("Name")
+        # self.attri_widget.horizontalHeader().setStretchLastSection(True)
+        self.attri_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)

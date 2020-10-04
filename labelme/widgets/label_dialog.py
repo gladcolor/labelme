@@ -27,7 +27,7 @@ class LabelQLineEdit(QtWidgets.QLineEdit):
             super(LabelQLineEdit, self).keyPressEvent(e)
 
 
-class LabelDialog(QtWidgets.QDialog):
+class LabelDialog(QtWidgets.QDialog):  # to give a label to a shape.
     def __init__(
         self,
         text="Enter object label",

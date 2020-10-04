@@ -72,11 +72,15 @@ class LabelListWidgetItem(QtGui.QStandardItem):
         super(LabelListWidgetItem, self).__init__()
         self.setText(text)
         self.setShape(shape)
+        if shape:
+            print("shape.attributes:", shape.attributes)
 
         self.setCheckable(True)
         self.setCheckState(Qt.Checked)
         self.setEditable(False)
         self.setTextAlignment(Qt.AlignBottom)
+
+
 
     def clone(self):
         return LabelListWidgetItem(self.text(), self.shape())
@@ -165,6 +169,11 @@ class LabelListWidget(QtWidgets.QListView):
             raise TypeError("item must be LabelListWidgetItem")
         self.model().setItem(self.model().rowCount(), 0, item)
         item.setSizeHint(self.itemDelegate().sizeHint(None, None))
+
+    def setWidgetItem(self, item, row):
+        if not isinstance(item, LabelListWidgetItem):
+            raise TypeError("item must be LabelListWidgetItem")
+        self.model().setItem(row, 0, item)
 
     def removeItem(self, item):
         index = self.model().indexFromItem(item)
