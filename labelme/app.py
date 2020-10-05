@@ -142,7 +142,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.previousItem = []
         self.previousItemIndex = []
         # self.attri_widget.itemChanged.connect(self.attributesChanged)
-        self.attri_widget.currentItemChanged.connect(self.attributesChanged)
+        # self.attri_widget.currentItemChanged.connect(self.attributesChanged)
+        self.label_dock_clicked = False
+        self.haveAddedNewShape = False
 
 
         # self.previousItemIdx.append(self.labelList.selectedIndexes()[-1])
@@ -849,6 +851,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.populateModeActions()
 
+
         # self.firstStart = True
         # if self.firstStart:
         #    QWhatsThis.enterWhatsThisMode()
@@ -1147,6 +1150,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if filename:
                 self.loadFile(filename)
 
+
+
     # React to canvas signals.
     def shapeSelectionChanged(self, selected_shapes):
         self._noSelectionSlot = True
@@ -1173,6 +1178,14 @@ class MainWindow(QtWidgets.QMainWindow):
         label_list_item = LabelListWidgetItem(text, shape)
         self.labelList.setWidgetItem(label_list_item, row)
 
+        rgb = self._get_rgb_by_label(shape.label)
+
+        r, g, b = rgb
+        label_list_item.setText(
+            '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                text, r, g, b
+            )
+        )
 
     def addLabel(self, shape):
         if shape.group_id is None:
@@ -1204,6 +1217,7 @@ class MainWindow(QtWidgets.QMainWindow):
         shape.fill_color = QtGui.QColor(r, g, b, 128)
         shape.select_line_color = QtGui.QColor(255, 255, 255)
         shape.select_fill_color = QtGui.QColor(r, g, b, 155)
+
 
     def _get_rgb_by_label(self, label):
         if self._config["shape_color"] == "auto":
@@ -1246,7 +1260,7 @@ class MainWindow(QtWidgets.QMainWindow):
             attributes = shape['attributes']
 
             shape = Shape(
-                label=label, shape_type=shape_type, group_id=group_id,
+                label=label, shape_type=shape_type, group_id=group_id, attributes=attributes
             )
             for x, y in points:
                 shape.addPoint(QtCore.QPointF(x, y))
@@ -1348,14 +1362,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.addLabel(shape)
         self.setDirty()
 
-    def attributesChanged(self):
+    def attributesChanged(self, currentItem, previousItem):
+
+        if not self.label_dock_clicked:
+            return
+
         if len(self.labelList.selectedItems()) < 1:
             reply = QtWidgets.QMessageBox.information(self, 'Hello', "Please select a polygon.",
                                                       QMessageBox.Ok | QMessageBox.Close, QMessageBox.Close)
             return
 
         else:
-            currentItem = self.currentItem()  # not a shape
+            # currentItem = self.currentItem()  # not a shape
             currentItemIndex = self.labelList.selectedIndexes()[0].row()
             attributes = self.readAttributDock()
 
@@ -1373,36 +1391,65 @@ class MainWindow(QtWidgets.QMainWindow):
         print("attributesChanged.")
         # self.setDirty()
 
-    def labelSelectionChanged(self):
-        if len(self.previousItem) > 0:
+        self.label_dock_clicked = False
+
+    def cleanAttributeDock(self):
+        try:
+            rowCnt = self.attri_widget.rowCount()
+            for i in range(rowCnt):
+                self.attri_widget.setItem(i, 1, QTableWidgetItem(""))
+        except Exception as e:
+            print("Error in cleanAtttribute: ", e)
+
+    def labelSelectionChanged(self, selected_list, deselected_list):
+
+        if len(selected_list) > 1:
+            self.cleanAttributeDock()
+
+        elif self.haveAddedNewShape:
+            self.haveAddedNewShape = False
+        #     self.previousItemIndex.append(self.labelList.selectedIndexes()[0].row())
+            # self.showItemAttributes()
+
+        elif len(selected_list) == 1:
+        # elif (len(selected_list) > 0) and (len(self.previousItemIndex) > 0):
 
             try:
-            # self.previousItem.pop().attributes = self.readAttributDock()
-                previousItem = self.previousItem.pop()
-                print("previousItem:", previousItem.shape().label)
-                preIndex = self.previousItemIndex.pop()
-                print("previousItemIndex:", preIndex)
-                attributes = self.readAttributDock()
+                if len(deselected_list) == 1:
 
-                shape1 = previousItem.shape()
-                # attributes = {"color": 33}
-                shape1.attributes = attributes
+                    preIndex = self.previousItemIndex.pop()
+                    print("previousItemIndex:", preIndex)
+                    attributes = self.readAttributDock()
+                    shape1 = deselected_list[0].shape()
+                    shape1.attributes = attributes
+                    print("shape1.attributes:", shape1.attributes)
+                    self.setLabel(shape1, preIndex)
 
+                    self.setDirty()
+                    self.label_dock_clicked = True
+                    #
+                    self.showItemAttributes()
 
-                print("shape1.attributes:", shape1.attributes)
+                if len(deselected_list) == 0:
+                    self.showItemAttributes()
 
-                self.setLabel(shape1, preIndex)
+                self.previousItemIndex.append(self.labelList.selectedIndexes()[0].row())
 
-                # self.labelList[preIndex].setData(previousItem.clone().shape(), Qt.UserRole)
+            except Exception as e:
+                print("Error in labelSelectoinChanged:", e)
 
-                # print("self.labelList[self.previousItemIndex.pop()].attributes:", self.labelList[preIndex].shape().attributes)
-                # clean
-                # rowCnt = self.attri_widget.rowCount()
-                # for i in range(rowCnt):
-                #     self.attri_widget.setItem(i, 1, QTableWidgetItem(""))
+        elif len(selected_list) < 1:
+            self.cleanAttributeDock()
 
-                # self.labelList[preIndex] = self.labelList[preIndex].setShape(previousItem.shape())
+        else:
+            pass
 
+            # self.previousItemIndex.append(self.labelList.selectedIndexes()[0].row())
+            #
+            # len(deselected_list) == 1:
+            #
+            # if len(selected_list) == 1:
+            #     self.showItemAttributes()
 
                 # print("new attributes:", shape1.attributes)
                 # print("self.labelList[-1].shape().attributes:",
@@ -1411,24 +1458,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 # print("self.labelList[0].shape().attributes:", self.labelList[0].shape().attributes)
                 # print("self.labelList[1].shape().attributes:", self.labelList[1].shape().attributes)
-
-
-                # self.labelList.setItem(self.labelList.rowCount(),  previousItem)
-
-
-
-            except Exception as e:
-                print(e)
-
-            # self.labelList[self.previousItemIndex.pop()].setShape(previousItem)
-            # self.labelList[2].data.attributes
-
-
-            # print("self.labelList[2].data.attributes: ", self.labelList[2].data.attributes)
-
-
-
-
 
 
         if self._noSelectionSlot:
@@ -1442,14 +1471,6 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self.canvas.deSelectShape()
 
-        self.previousItem.append(self.currentItem()) # not a shape
-        self.previousItemIndex.append(self.labelList.selectedIndexes()[0].row())
-
-        # print("self.currentItem.label:", self.currentItem().shape().label)
-        # print("self.currentItem.attributes:", self.currentItem().shape().attributes)
-
-
-
         # current_class = self.currentItem().shape().label
         # attributes = utils.owl.getTextAttribtes(current_class)
 
@@ -1457,20 +1478,32 @@ class MainWindow(QtWidgets.QMainWindow):
         # reply = QtWidgets.QMessageBox.information(self, 'Hello', str(current_class),
         #                                           QMessageBox.Ok | QMessageBox.Close, QMessageBox.Close)
 
-        currentItem = self.currentItem()  # not a shape
-        currentItemIndex = self.labelList.selectedIndexes()[0].row()
-        attributes = self.readAttributDock()
-
-        shape1 = currentItem.shape()
-        # attributes = {"color": 33}
-        shape1.attributes = attributes
-
-        print("shape1.attributes:", shape1.attributes)
-
     def showItemAttributes(self):
-        currentItem = self.currentItem()  # not a shape
-        currentItemIndex = self.labelList.selectedIndexes()[0].row()
-        attributes = currentItem.shape().attributes
+        try:
+            currentItem = self.currentItem()  # not a shape
+            currentItemIndex = self.labelList.selectedIndexes()[0].row()
+            attributes = currentItem.shape().attributes
+            row_cnt = self.attri_widget.rowCount()
+
+            for i in range(row_cnt):
+                self.attri_widget.setItem(i, 1, QTableWidgetItem(""))
+
+            for attri in attributes.keys():
+                value = str(attributes[attri])
+                try:
+                    idx = self.init_attributes.index(attri)
+                    self.attri_widget.setItem(idx, 1, QTableWidgetItem(value))
+                except Exception as e:
+                    self.attri_widget.setRowCount(row_cnt + 1)
+                    self.attri_widget.setItem(idx, 0, QTableWidgetItem(str(attri)))
+                    self.attri_widget.setItem(idx, 1, QTableWidgetItem(value))
+
+                    row_cnt = self.attri_widget.rowCount()
+
+                    # print("Errow in showItemAttributes: ", e)
+                    # pass
+        except Exception as e:
+            print("Error in showItemAttributes: ", e)
 
 
     def labelItemChanged(self, item):
@@ -1520,11 +1553,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self.actions.undoLastPoint.setEnabled(False)
             self.actions.undo.setEnabled(True)
             self.setDirty()
+
+            try:
+                self.haveAddedNewShape = True
+
+                idx = self.labelList.model().index(len(self.labelList)-1, 0)
+                self.labelList.setCurrentIndex(idx)
+                self.labelList.setFocus()
+
+
+                # self.labelList.setCurrentIndex(len(self.labelList) - 1)
+
+                # self.labelList.model().itemData(0)
+            except Exception as e:
+                print(e)
+            #
+
         else:
             self.canvas.undoLastLine()
             self.canvas.shapesBackups.pop()
 
-        self.labelList.selectItem(self.labelList.model().rowCount() - 1)
 
     def scrollRequest(self, delta, orientation):
         units = -delta * 0.1  # natural scroll
@@ -1621,6 +1669,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             self.fileListWidget.setCurrentRow(self.imageList.index(filename))
             self.fileListWidget.repaint()
+
             return
 
         self.resetState()
@@ -1740,6 +1789,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.addRecentFile(self.filename)
         self.toggleActions(True)
         self.status(self.tr("Loaded %s") % osp.basename(str(filename)))
+
+        # if len(self.labelList) > 0:
+        #     self.labelList.setCurrentRow(0)
+
         return True
 
     def resizeEvent(self, event):
@@ -1756,6 +1809,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.scale = 0.01 * self.zoomWidget.value()
         self.canvas.adjustSize()
         self.canvas.update()
+
 
     def adjustScale(self, initial=False):
         value = self.scalers[self.FIT_WINDOW if initial else self.zoomMode]()
@@ -1821,6 +1875,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def loadRecent(self, filename):
         if self.mayContinue():
             self.loadFile(filename)
+        # if len(self.labelList) > 0:
+        #     self.labelList.setCurrentIndex(0)
 
     def openPrevImg(self, _value=False):
         keep_prev = self._config["keep_prev"]
@@ -1843,6 +1899,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.loadFile(filename)
 
         self._config["keep_prev"] = keep_prev
+
+        # if len(self.labelList) > 0:
+        #     self.labelList.setCurrentIndex(0)
 
     def openNextImg(self, _value=False, load=True):
         keep_prev = self._config["keep_prev"]
@@ -1869,6 +1928,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.filename and load:
             self.loadFile(self.filename)
 
+        # if len(self.labelList) > 0:
+        #     self.labelList.setCurrentIndex(0)
+
         self._config["keep_prev"] = keep_prev
 
     def openFile(self, _value=False):
@@ -1893,6 +1955,8 @@ class MainWindow(QtWidgets.QMainWindow):
         filename = str(filename)
         if filename:
             self.loadFile(filename)
+        # if len(self.labelList) > 0:
+        #     self.labelList.setCurrentIndex(0)
 
     def changeOutputDirDialog(self, _value=False):
         default_output_dir = self.output_dir

@@ -74,7 +74,6 @@ class LabelFile(object):
             "imagePath",
             "shapes",  # polygonal annotations
             "flags",  # image level flags
-            "attributes",
             "imageHeight",
             "imageWidth",
         ]

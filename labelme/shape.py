@@ -43,7 +43,7 @@ class Shape(object):
         shape_type=None,
         flags=None,
         group_id=None,
-        attributes={"color": 22},
+        attributes={},
     ):
         self.label = label
         self.group_id = group_id

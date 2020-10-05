@@ -72,8 +72,8 @@ class LabelListWidgetItem(QtGui.QStandardItem):
         super(LabelListWidgetItem, self).__init__()
         self.setText(text)
         self.setShape(shape)
-        if shape:
-            print("shape.attributes:", shape.attributes)
+        # if shape:
+        #     print("shape.attributes:", shape.attributes)
 
         self.setCheckable(True)
         self.setCheckState(Qt.Checked)
