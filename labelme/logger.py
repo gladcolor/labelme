@@ -50,18 +50,26 @@ class ColoredFormatter(logging.Formatter):
 class ColoredLogger(logging.Logger):
 
     FORMAT = (
-        "[%(levelname2)s] %(module2)s:%(funcName2)s:%(lineno2)s - %(message2)s"
+        "[%(levelname2)s] %(asctime)s %(module2)s:%(funcName2)s:%(lineno2)s - %(message2)s"
+    )
+
+    FORMAT_FILE = (
+        "[%(levelname2)s] %(asctime)s %(module2)s:%(funcName2)s:%(lineno2)s - %(message2)s"
     )
 
     def __init__(self, name):
         logging.Logger.__init__(self, name, logging.INFO)
 
         color_formatter = ColoredFormatter(self.FORMAT)
+        file_formatter = logging.Formatter(self.FORMAT_FILE)
 
         console = logging.StreamHandler()
         console.setFormatter(color_formatter)
+        file = logging.FileHandler(filename="labelme_huan.log")
+        file.setFormatter(file_formatter)
 
         self.addHandler(console)
+        self.addHandler(file)
         return
 
 
