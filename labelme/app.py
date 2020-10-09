@@ -3,13 +3,17 @@
 import functools
 import math
 import os
+import sys
+import json
 import os.path as osp
 import re
 import webbrowser
 
+
 import logging
 import logging.handlers
 
+from functools import partial
 
 import imgviz
 
@@ -27,7 +31,7 @@ from labelme import __appname__
 from labelme import PY2
 from labelme import QT5
 
-import sys
+
 
 
 
@@ -72,7 +76,6 @@ class MainWindow(QtWidgets.QMainWindow):
         output_file=None,
         output_dir=None,
 
-
     ):
 
         print("hi, huan")
@@ -115,6 +118,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Whether we need to save or not.
         self.dirty = False
+        self.max_object_id = 0
+
 
         self._noSelectionSlot = False
 
@@ -131,13 +136,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.labelList = LabelListWidget()
         self.lastOpenDir = None
+        self.relationships = {}
 
-        self.ontology_path =  r'X:\My Drive\Research\StreetGraph\documents\street_ontology.owl'
-        self.onto = utils.owl.loadOWL(self.ontology_path)
+        # ontology
+        # self.ontology_path =  r'X:\My Drive\Research\StreetGraph\documents\street_ontology.owl'
+        # self.onto = utils.owl.loadOWL(self.ontology_path)
 
 
         ##### attribute
-        self.init_attributes = ['step_cnt', "storey_cnt", 'color', 'shape', "size", "length", 'width', 'height', 'direction', 'texture', 'material']
+        # self.init_attributes = ['step_cnt', "storey_cnt", 'color', 'shape', "size", "length", 'width', 'height', 'direction', 'texture', 'material']
+        j_attri_file = r'attributes.json'
+        jdata = {}
+        self.init_attributes_dict = jdata
+        with open(j_attri_file, 'r') as f:
+            jdata = json.load(f)
+            self.init_attributes_dict = jdata
+
+        self.init_attributes_list = list(jdata.keys())
+
         self.attri_dock = QtWidgets.QDockWidget("Attributes", self)
         self.attri_dock.setObjectName("Attributes")
         self.attri_widget = QtWidgets.QTableWidget()
@@ -154,9 +170,41 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_dock_clicked = False
         self.haveAddedNewShape = False
 
+        ##### Relationships
+        predicates_file = 'predicates.txt'
+        self.init_predicates = open(predicates_file, 'r').readlines()
+        self.init_predicates = [line.replace("\n", '') for line in self.init_predicates]
+        logger.info("Predicates: %s" % ",".join(self.init_predicates))
 
-        # self.previousItemIdx.append(self.labelList.selectedIndexes()[-1])
-        # self.attri_widget.
+        self.relation_dock = QtWidgets.QDockWidget("Relationships", self)
+        self.relation_dock.setObjectName("Relationships")
+        self.relation_widget = QtWidgets.QTableWidget()
+        self.relation_ = QtWidgets.QTableWidget()
+        self.relation_dock.setWidget(self.relation_widget)
+        headerText = ['Subject', 'Predicate', "Object"]
+        self.relation_widget.setColumnCount(len(headerText))
+        self.relation_widget.setHorizontalHeaderLabels(headerText)
+        self.relation_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.relation_widget.setSortingEnabled(True)
+
+        self.relation_widget.itemSelectionChanged.connect(self.rel_select_changed)
+        # self.relation_widget.selectionChanged.connect(self.rel_select_changed2)
+
+        # self.relation_widget.cellChanged.connect(self.rel_cellchanged)
+        self.relation_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+
+        self.relation_widget.customContextMenuRequested.connect(self.comboboxContextMenuEvent)
+
+        self.selection_model = self.relation_widget.selectionModel()
+        self.selection_model.selectionChanged.connect(self.on_rel_select_changed2)
+
+        self.object_combox = QtWidgets.QComboBox()
+        # self.object_combox.currentTextChanged.connect(self.rel_cellchanged)
+
+
+
+        # self.attri_widget.cellChanged.connect(self.relationCellChanged)
+
 
         # flags
         self.flag_dock = self.flag_widget = None
@@ -244,7 +292,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(scrollArea)
 
         features = QtWidgets.QDockWidget.DockWidgetFeatures()
-        for dock in ["flag_dock", "label_dock", "shape_dock", "file_dock"]:
+        for dock in ["flag_dock", "label_dock", "shape_dock", "file_dock" ]:
             if self._config[dock]["closable"]:
                 features = features | QtWidgets.QDockWidget.DockWidgetClosable
             if self._config[dock]["floatable"]:
@@ -256,13 +304,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 getattr(self, dock).setVisible(False)
 
 
+        self.addDockWidget(Qt.RightDockWidgetArea, self.attri_dock)  # huan
+        self.addDockWidget(Qt.RightDockWidgetArea, self.relation_dock)  # huan
 
         self.addDockWidget(Qt.RightDockWidgetArea, self.label_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.shape_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
         self.addDockWidget(Qt.RightDockWidgetArea, self.flag_dock)
 
-        self.addDockWidget(Qt.RightDockWidgetArea, self.attri_dock)  # huan
+
 
 
         # Actions
@@ -742,6 +792,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.menus.view,
             (
                 self.attri_dock.toggleViewAction(),
+                self.relation_dock.toggleViewAction(),
                 self.flag_dock.toggleViewAction(),
                 self.label_dock.toggleViewAction(),
                 self.shape_dock.toggleViewAction(),
@@ -858,7 +909,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.zoomWidget.valueChanged.connect(self.paintCanvas)
 
         self.populateModeActions()
+        self.findMaxObjectId()
 
+
+    def findMaxObjectId(self):
+        for item in self.labelList:
+            shape = item.shape()
+            if self.max_object_id < int(shape.object_id):
+                self.max_object_id = int(shape.object_id)
+            if self.max_object_id == int(shape.object_id):
+                self.max_object_id = int(shape.object_id)
 
         # self.firstStart = True
         # if self.firstStart:
@@ -1128,11 +1188,40 @@ class MainWindow(QtWidgets.QMainWindow):
         shape.label = text
         shape.flags = flags
         shape.group_id = group_id
+
+        try:
+            object_id = shape.object_id
+        except:
+            object_id = ""
+        try:
+            rgb = self._get_rgb_by_label(shape.label)
+        except:
+            rgb = (0, 0, 0)
+
+        r, g, b = rgb
+
+
         if shape.group_id is None:
-            item.setText(shape.label)
+            # item.setText(shape.label)
+
+
+            item.setText(
+                '{} - {} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                    object_id, text, r, g, b))
         else:
-            item.setText("{} ({})".format(shape.label, shape.group_id))
+            # item.setText("{} ({})".format(shape.label, shape.group_id))
+            try:
+                object_id = shape.object_id
+            except:
+                object_id = ""
+
+
+            item.setText(
+                '{} - {} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                    object_id, text, r, g, b), shape.group_id)
+
         self.setDirty()
+
         if not self.uniqLabelList.findItemsByLabel(shape.label):
             item = QtWidgets.QListWidgetItem()
             item.setData(Qt.UserRole, shape.label)
@@ -1157,6 +1246,8 @@ class MainWindow(QtWidgets.QMainWindow):
             filename = self.imageList[currIndex]
             if filename:
                 self.loadFile(filename)
+                self.max_object_id = 0
+                self.findMaxObjectId()
 
 
 
@@ -1188,10 +1279,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         rgb = self._get_rgb_by_label(shape.label)
 
+        try:
+            object_id = shape.object_id
+        except:
+            object_id = ""
+
         r, g, b = rgb
         label_list_item.setText(
-            '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
-                text, r, g, b
+            '{} - {} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                object_id, text, r, g, b
             )
         )
 
@@ -1213,10 +1309,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         rgb = self._get_rgb_by_label(shape.label)
 
+        try:
+            object_id = shape.object_id
+        except:
+            object_id = ""
+
+        if object_id == '':
+            object_id = self.max_object_id + 1
+            self.max_object_id += 1
+            shape.object_id = object_id
+            self.setDirty()
+
         r, g, b = rgb
         label_list_item.setText(
-            '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
-                text, r, g, b
+            '{} - {} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                object_id, text, r, g, b
             )
         )
         shape.line_color = QtGui.QColor(r, g, b)
@@ -1230,6 +1337,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _get_rgb_by_label(self, label):
         if self._config["shape_color"] == "auto":
             item = self.uniqLabelList.findItemsByLabel(label)[0]
+            # if self.uniqLabelList.findItemsByLabel(label) > 0:
+                # item = self.uniqLabelList.findItemsByLabel(label)[0]
+            # else:
+            #     item = self.uniqLabelList.createItemFromLabel(label)
+            #     item = self.uniqLabelList.findItemsByLabel(label)[0]
             label_id = self.uniqLabelList.indexFromItem(item).row() + 1
             label_id += self._config["shift_auto_shape_color"]
             return LABEL_COLORMAP[label_id % len(LABEL_COLORMAP)]
@@ -1256,17 +1368,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.loadShapes(shapes, replace=replace)
         self.labelList.selectionMode()
 
+
+
     def loadLabels(self, shapes):
         s = []
-        for shape in shapes:
+        for idx, shape in enumerate(shapes):
             label = shape["label"]
             points = shape["points"]
             shape_type = shape["shape_type"]
             flags = shape["flags"]
             group_id = shape["group_id"]
             other_data = shape["other_data"]
-            attributes = shape.get('attributes', '')
-            object_id = shape.get('object_id', '')
+            attributes = shape.get('attributes', {})
+            try:
+                object_id = shape['object_id']
+            except:
+                object_id = self.max_object_id + 1
+                self.max_object_id = self.max_object_id + 1
 
             shape = Shape(
                 label=label,
@@ -1309,7 +1427,6 @@ class MainWindow(QtWidgets.QMainWindow):
             value = str(value)
             if value.strip(" ") != "":
                 res[attribute] = value
-
         return res
 
     def saveLabels(self, filename):  # save json results
@@ -1317,13 +1434,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         def format_shape(s):
             data = s.other_data.copy()
-            object_id_start = 0 # give an object_id to the object with ID.
+            new_object_id = 0 # give an object_id to the object with ID.
+            try:
+                object_id = s.object_id
+            except:
+                new_object_id += 1
+                object_id = new_object_id
+
             data.update(
                 dict(
                     label=s.label.encode("utf-8") if PY2 else s.label,
                     points=[(p.x(), p.y()) for p in s.points],
                     group_id=s.group_id,
-                    object_id=s.object_id,
+                    object_id=object_id,
                     shape_type=s.shape_type,
                     flags=s.flags,
                     attributes=s.attributes
@@ -1418,16 +1541,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.attri_widget.blockSignals(True)
 
         self.attri_widget.setRowCount(0)
-        # try:
-        #     rowCnt = self.attri_widget.rowCount()
-        #     for i in range(rowCnt):
-        #         self.attri_widget.setItem(i, 0, QTableWidgetItem(""))
-        #         self.attri_widget.setItem(i, 1, QTableWidgetItem(""))
-        # except Exception as e:
-        #     print("Error in cleanAtttribute: ", e)
 
         self.attri_widget.blockSignals(False)
 
+    def cleanRelationDock_key_value(self):
+        self.relation_widget.blockSignals(True)
+        self.relation_widget.setRowCount(0)
+        self.relation_widget.blockSignals(False)
 
     def cleanAttributeDock_value(self):
 
@@ -1598,7 +1718,7 @@ class MainWindow(QtWidgets.QMainWindow):
             for attri in attributes.keys():
                 value = str(attributes[attri])
                 try:
-                    idx = self.init_attributes.index(attri)
+                    idx = self.init_attributes_list.index(attri)
                     self.attri_widget.blockSignals(True)
                     self.attri_widget.setItem(idx, 1, QTableWidgetItem(value))
                 except Exception as e:
@@ -1616,6 +1736,51 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.attri_widget.blockSignals(False)
 
+    def showItemRelationships(self):
+        logger.info("showItemRelationships().")
+        try:
+            self.relation_widget.blockSignals(True)
+
+            if len(self.relationships) <1:
+                self.cleanRelationDock_key_value()
+                return
+
+            self.cleanRelationDock_key_value()
+            self.initRelationDocks()
+
+            relationships = self.relationships
+            self.relation_widget.setRowCount(len(relationships))
+
+            # generate a combox filled with shape label and id
+
+            for idx, rel in enumerate(relationships):
+                subject_text = str(rel["subject"]['object_id']) + " - " + rel["subject"]["name"]
+                predicate = rel['predicate']
+                object_text = str(rel["object"]['object_id']) + " - " +  rel["object"]['name']
+                try:
+
+
+
+                    self.relation_widget.blockSignals(True)
+
+                    # self.relation_widget.setCellWidget(idx, 0, object_combox)
+
+                    self.relation_widget.setItem(idx, 0, QTableWidgetItem(subject_text))
+                    self.relation_widget.setItem(idx, 1, QTableWidgetItem(predicate))
+                    self.relation_widget.setItem(idx, 2, QTableWidgetItem(object_text))
+
+                    #
+
+                except Exception as e:
+                   logger.error("Error in showItemRelationships()" + str(e), exc_info=True)
+
+
+        except Exception as e:
+            print("Error in showItemRelationships: ", e)
+            logger.error(e, exc_info=True)
+
+        self.relation_widget.blockSignals(False)
+
     def labelItemChanged(self, item):
         shape = item.shape()
         self.canvas.setShapeVisible(shape, item.checkState() == Qt.Checked)
@@ -1625,6 +1790,58 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.loadShapes([item.shape() for item in self.labelList])
 
     # Callback functions:
+
+    def extractAttributes(self, text, shape):
+        # try:    # has a bug: attributes come from the previous shape.
+        #     attributes = shape.attributes
+        # except:
+        #     attributes = {}
+
+        attributes = {}
+
+        label = text
+        shape.raw_label = label
+        fields = label.split("_")
+
+        # shape["label"] = fields[0]
+        if len(fields) > 1:
+            fields = fields[1:]
+        else:
+            fields = []
+
+        # process storey_cnt for house
+        if ("house" in label) and (len(fields) > 0):
+            if fields[0].isnumeric():
+                attributes["storey_cnt"] = fields[0]
+                print("Added attributes.storey_cnt: ", attributes["storey_cnt"])
+
+        # process step_cnt for step
+        if ("step" in label) and (len(fields) > 0):
+            if fields[0].isnumeric():
+                attributes["step_cnt"] = fields[0]
+                print("Added attributes.step_cnt: ", attributes["step_cnt"])
+
+        # process shape and trim-color for window
+        if ("window" in label) and (len(fields) > 0):
+            for field in fields:
+                if field in self.init_attributes_dict["window-trim-color"]:
+                    attributes["window-trim-color"] = field
+                    print("Added attributes.window-trim-color: ", attributes["window-trim-color"])
+                if field in self.init_attributes_dict["in-side-facade"]:
+                    attributes["in-side-facade"] = field
+                    print("Added attributes.in-side-facade: ", attributes["in-side-facade"])
+
+        # process color and shape
+        for field in fields:
+            if field in self.init_attributes_dict["color"]:
+                if "window" not in label:
+                    attributes["color"] = field
+                    print("Added attributes.color: ", attributes["color"])
+            if field in self.init_attributes_dict["shape"]:
+                attributes["shape"] = field
+                print("Added attributes.shape: ", attributes["shape"])
+
+        shape.attributes = attributes
 
     def newShape(self):
         """Pop-up and give focus to the label editor.
@@ -1658,7 +1875,12 @@ class MainWindow(QtWidgets.QMainWindow):
             shape = self.canvas.setLastLabel(text, flags)
 
             shape.group_id = group_id
-            shape.object_id = len(self.labelList)
+            shape.object_id = self.max_object_id + 1
+
+            # process the attributes in the text separated by "_"
+            self.extractAttributes(text, shape)
+
+            self.max_object_id = shape.object_id
             self.addLabel(shape)
             self.actions.editMode.setEnabled(True)
             self.actions.undoLastPoint.setEnabled(False)
@@ -1668,11 +1890,15 @@ class MainWindow(QtWidgets.QMainWindow):
             try:
                 self.haveAddedNewShape = True
 
+                self.setEditMode()
+
                 idx = self.labelList.model().index(len(self.labelList)-1, 0)
                 self.labelList.setCurrentIndex(idx)
                 self.labelList.setFocus()
 
+                self.canvas.deSelectShape()
                 self.canvas.selectShapes([shape])
+                self.canvas.repaint()
 
                 # self.labelList.setCurrentIndex(len(self.labelList) - 1)
 
@@ -1781,7 +2007,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             self.fileListWidget.setCurrentRow(self.imageList.index(filename))
             self.fileListWidget.repaint()
-
+            # self.findMaxObjectId()
             return
 
         self.resetState()
@@ -1818,6 +2044,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.status(self.tr("Error reading %s") % label_file)
                 return False
             self.imageData = self.labelFile.imageData
+
+            self.relationships = self.labelFile.relationships
+
             self.imagePath = osp.join(
                 osp.dirname(label_file), self.labelFile.imagePath,
             )
@@ -1845,6 +2074,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return False
         self.image = image
         self.filename = filename
+
+
+
         if self._config["keep_prev"]:
             prev_shapes = self.canvas.shapes
         self.canvas.loadPixmap(QtGui.QPixmap.fromImage(image))
@@ -1902,8 +2134,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toggleActions(True)
         self.status(self.tr("Loaded %s") % osp.basename(str(filename)))
 
+        self.showItemRelationships()
         # if len(self.labelList) > 0:
         #     self.labelList.setCurrentRow(0)
+
 
         return True
 
@@ -1987,8 +2221,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def loadRecent(self, filename):
         if self.mayContinue():
             self.loadFile(filename)
+            self.max_object_id = 0
+            self.findMaxObjectId()
         # if len(self.labelList) > 0:
         #     self.labelList.setCurrentIndex(0)
+        self.findMaxObjectId()
 
     def openPrevImg(self, _value=False):
         keep_prev = self._config["keep_prev"]
@@ -2009,8 +2246,14 @@ class MainWindow(QtWidgets.QMainWindow):
             filename = self.imageList[currIndex - 1]
             if filename:
                 self.loadFile(filename)
+                self.max_object_id = 0
+                self.findMaxObjectId()
+
+
 
         self._config["keep_prev"] = keep_prev
+
+        self.findMaxObjectId()
 
         # if len(self.labelList) > 0:
         #     self.labelList.setCurrentIndex(0)
@@ -2039,11 +2282,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if self.filename and load:
             self.loadFile(self.filename)
+            self.max_object_id = 0
+            self.findMaxObjectId()
 
         # if len(self.labelList) > 0:
         #     self.labelList.setCurrentIndex(0)
 
         self._config["keep_prev"] = keep_prev
+
+        self.findMaxObjectId()
 
     def openFile(self, _value=False):
         if not self.mayContinue():
@@ -2067,8 +2314,11 @@ class MainWindow(QtWidgets.QMainWindow):
         filename = str(filename)
         if filename:
             self.loadFile(filename)
+            self.max_object_id = 0
+            self.findMaxObjectId()
         # if len(self.labelList) > 0:
         #     self.labelList.setCurrentIndex(0)
+        self.findMaxObjectId()
 
     def changeOutputDirDialog(self, _value=False):
         default_output_dir = self.output_dir
@@ -2388,8 +2638,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # row_cnt = self.attri_widget.rowCount()
         self.attri_widget.blockSignals(True)
-        self.attri_widget.setRowCount(len(self.init_attributes))
-        for idx, attri in enumerate(self.init_attributes):
+        self.attri_widget.setRowCount(len(self.init_attributes_list))
+        for idx, attri in enumerate(self.init_attributes_list):
             self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
             self.attri_widget.setItem(idx, 1, QTableWidgetItem(""))
         # QTableWidgetItem("Name")
@@ -2398,44 +2648,259 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.attri_widget.blockSignals(False)
 
+    # huan
+    def initRelationDocks(self):
 
-    def loadAttributes(self, attributes):
-        s = []
-        for attri in attributes:
-            label = shape["label"]
-            points = shape["points"]
-            shape_type = shape["shape_type"]
-            flags = shape["flags"]
-            group_id = shape["group_id"]
-            other_data = shape["other_data"]
-            attributes = shape['attributes']
+        # row_cnt = self.attri_widget.rowCount()
+        self.relation_widget.blockSignals(True)
+        # self.attri_widget.setRowCount(len(self.init_attributes))
 
-            shape = Shape(
-                label=label, shape_type=shape_type, group_id=group_id, object_id=object,
-            )
-            for x, y in points:
-                shape.addPoint(QtCore.QPointF(x, y))
-            shape.close()
-
-            default_flags = {}
-            if self._config["label_flags"]:
-                for pattern, keys in self._config["label_flags"].items():
-                    if re.match(pattern, label):
-                        for key in keys:
-                            default_flags[key] = False
-            shape.flags = default_flags
-            shape.flags.update(flags)
-            shape.other_data = other_data
-
-            s.append(shape)
-        self.loadShapes(s)
-
-        self.attri_widget.blockSignals(True)
-        init_attributes = ['step_cnt', "storey_cnt", 'color', 'shape', "size", "length", 'width', 'height', 'direction', 'texture', 'material']
-        self.attri_widget.setRowCount(len(init_attributes))
-        for idx, attri in enumerate(init_attributes):
-            self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
         # QTableWidgetItem("Name")
         # self.attri_widget.horizontalHeader().setStretchLastSection(True)
-        self.attri_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.attri_widget.blockSignals(False)
+
+        self.relation_widget.blockSignals(False)
+
+    def findItemByObject_id(self, object_id):
+        for row in range(self.labelList.model().rowCount()):
+            item = self.labelList.model().item(row, 0)
+            if str(item.shape().object_id) == str(object_id):
+                return item
+
+    def readRelationshipDock(self):
+        rowCnt = self.relation_widget.rowCount()
+        res = []
+        try:
+            for i in range(rowCnt):
+                subject_id, subject = self.relation_widget.item(i, 0).text().split(" - ")
+                predicate           = self.relation_widget.item(i, 1).text()
+                object_id,  object_ = self.relation_widget.item(i, 2).text().split(" - ")
+                relation = {}
+
+                relation["subject"] = {}
+                relation["subject"]["name"] = subject
+                relation["subject"]["object_id"] = subject_id
+
+                relation["predicate"] = predicate
+
+                relation["object"] = {}
+                relation["object"]["name"] = object_
+                relation["object"]["object_id"] = object_id
+
+                res.append(relation)
+            return res
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
+    def rel_select_changed(self):
+
+        try:
+            selected_idxs = self.relation_widget.selectedIndexes()
+            selected_rows = list(set([x.row() for x in selected_idxs]))
+            if len(selected_rows) > 1:
+                logger.info("Should select one relationship")
+                return
+            if len(selected_rows) == 0:
+                return
+            row = selected_rows[0]
+
+            subject_id = self.relation_widget.item(row, 0).text().split(" - ")[0]
+            object_id  = self.relation_widget.item(row, 2).text().split(" - ")[0]
+            subject_item = self.findItemByObject_id(subject_id)
+            object_item  = self.findItemByObject_id(object_id)
+
+            self.labelList.clearSelection()
+
+            if subject_item:
+                self.labelList.selectItem(subject_item)
+
+            if object_item:
+                self.labelList.selectItem(object_item)
+
+            if len(selected_idxs) == 1:
+                row = selected_idxs[0].row()
+                col = selected_idxs[0].column()
+                self.object_combox.clear()
+
+                all_objects = []
+                currentText = self.relation_widget.item(row, col).text()
+
+                object_combox =  QtWidgets.QComboBox()
+                object_combox.currentTextChanged.connect(lambda: self.rel_cellchanged(object_combox))
+                object_combox.customContextMenuRequested.connect(self.comboboxContextMenuEvent)
+
+                logger.info("self.object_combox.currentText:  " + self.object_combox.currentText())
+
+                if (col == 0) or (col == 2) :
+                    for item in self.labelList:
+                        cell_text = str(item.shape().object_id) + " - " + item.shape().label
+                        self.object_combox.addItem(cell_text)
+                        object_combox.addItem(cell_text)
+                        all_objects.append(cell_text)
+
+                    # self.relation_widget.blockSignals(True)
+                    # self.relation_widget.setCellWidget(row, col, self.object_combox)
+                    object_combox.setCurrentText(currentText)
+                    self.relation_widget.setCellWidget(row, col, object_combox)
+                    # crt_idx = all_objects.index()
+                    # self.relation_widget.blockSignals(False)
+
+                    # self.object_combox.blockSignals(True)
+                    # logger.info("self.object_combox.currentText:  " + self.object_combox.currentText())
+                    # self.object_combox.setCurrentText(currentText)
+                    # logger.info("self.object_combox.currentText:  " + self.object_combox.currentText())
+                    # self.object_combox.blockSignals(False)
+
+                    # self.object_combox.currentTextChanged.connect(self.rel_cellchanged())
+
+                if col == 1:
+                    for item in self.labelList:
+                        object_combox.addItems(self.init_predicates)
+                        object_combox.setEditable(True)
+                        self.object_combox.addItems(self.init_predicates)
+
+                        # self.object_combox.blockSignals(True)
+                        # self.object_combox.setCurrentText(currentText)
+                        # self.object_combox.blockSignals(False)
+
+                    # object_combox.blockSignals(True)
+                    object_combox.setCurrentText(currentText)
+                    # object_combox.blockSignals(False)
+
+                    # self.relation_widget.blockSignals(True)
+                    self.relation_widget.setCellWidget(row, col, object_combox)
+                    # self.relation_widget.blockSignals(False)
+                # res = self.readRelationshipDock()
+
+            currentRow = self.relation_widget.currentRow()
+            currentRow = str(currentRow)
+            info_str = f'Relationships table selected row: {currentRow}'
+            logger.info(info_str)
+
+            # for row in range(sel)
+            # try:
+            #     self.relation_widget.removeCellWidget(row, col)
+            # except Exception as e:
+            #     logger.error(e, exc_info= True)
+
+            # logger.info('Relationships table selected row: %s', currentRow)  # fails
+        except Exception as e:
+            logger.error(e, exc_info=1)
+
+    def rel_cellchanged(self, combobox):
+        try:
+            logger.info("Relationships table cell changed")
+            row = self.relation_widget.selectedIndexes()[0].row()
+            col = self.relation_widget.selectedIndexes()[0].column()
+            logger.info(row)
+            logger.info(col)
+
+            self.relation_widget.blockSignals(True)
+            logger.info(self.object_combox.currentText())
+            try:
+                self.relation_widget.setItem(row, col, QTableWidgetItem(combobox.currentText()))
+            except Exception as e:
+                logger.error(e, exc_info=True)
+            # self.relation_widget.setItem(row, col, QTableWidgetItem("5 - test"))
+
+            self.relation_widget.blockSignals(False)
+
+            res = self.readRelationshipDock()
+
+            try:
+                self.relation_widget.removeCellWidget(row, col)
+
+                object_text  = self.relation_widget.item(row, 2).text()
+                subject_text = self.relation_widget.item(row, 0).text()
+                if (object_text == subject_text):
+                    self.relation_widget.item(row, 2).setBackground(QtGui.QColor(183, 48, 48))
+
+            except Exception as e:
+                logger.error(e, exc_info= True)
+
+            logger.info(res)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
+    def comboboxContextMenuEvent(self, pos):
+        logger.info("comboboxContextMenuEvent.")
+        if self.relation_widget.selectionModel().selection().indexes():
+            for i in self.relation_widget.selectionModel().selection().indexes():
+                row, column = i.row(), i.column()
+            menu =  QtWidgets.QMenu()
+            relationAddAction = menu.addAction("Add")
+            relationDeleteAction = menu.addAction("Delete")
+            action = menu.exec_(self.relation_widget.mapToGlobal(pos))
+            if action == relationDeleteAction:
+                self.relationDeleteAction(row)
+
+    def relationAddAction(self, row, column):
+        logger.info("relationAddAction.")
+
+    def relationDeleteAction(self, row):
+        # TODO
+        try:
+            qm = QtWidgets.QMessageBox()
+            # qm.question(self, '', "Delete this row?", qm.Yes | qm.No)
+            ret = qm.question(self, '', "Delete this row?", qm.Yes | qm.No)
+
+            if ret == qm.Yes:
+                self.relation_widget.removeRow(row)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+        logger.info("Deleted a row.")
+
+    def on_rel_select_changed2(self, selected, deselected):
+        try:
+            logger.info("rel_select_changed2.")
+            idxs = deselected.indexes()
+            rows = list(set([idx.row() for idx in idxs]))
+            cols = list(set([idx.column() for idx in idxs]))
+            if len(rows) == 1:
+                if len(cols) == 1:
+                    self.relation_widget.removeCellWidget(rows[0], cols[0])
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
+
+
+
+    # def loadAttributes(self, attributes):
+    #     s = []
+    #     for attri in attributes:
+    #         label = shape["label"]
+    #         points = shape["points"]
+    #         shape_type = shape["shape_type"]
+    #         flags = shape["flags"]
+    #         group_id = shape["group_id"]
+    #         other_data = shape["other_data"]
+    #         attributes = shape['attributes']
+    #
+    #         shape = Shape(
+    #             label=label, shape_type=shape_type, group_id=group_id, object_id=object,
+    #         )
+    #         for x, y in points:
+    #             shape.addPoint(QtCore.QPointF(x, y))
+    #         shape.close()
+    #
+    #         default_flags = {}
+    #         if self._config["label_flags"]:
+    #             for pattern, keys in self._config["label_flags"].items():
+    #                 if re.match(pattern, label):
+    #                     for key in keys:
+    #                         default_flags[key] = False
+    #         shape.flags = default_flags
+    #         shape.flags.update(flags)
+    #         shape.other_data = other_data
+    #
+    #         s.append(shape)
+    #     self.loadShapes(s)
+    #
+    #     self.attri_widget.blockSignals(True)
+    #
+    #     self.attri_widget.setRowCount(len(self.init_attributes_list))
+    #     for idx, attri in enumerate(self.init_attributes_list):
+    #         self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
+    #     # QTableWidgetItem("Name")
+    #     # self.attri_widget.horizontalHeader().setStretchLastSection(True)
+    #     self.attri_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    #     self.attri_widget.blockSignals(False)

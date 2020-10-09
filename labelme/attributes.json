@@ -1,0 +1,15 @@
+{"step_cnt":[],
+"storey_cnt":[],
+"in-side-facade":["left", "right"],
+"color":["white", "black", "blue", "brown", "cyan", "gray", "green", "megenta", "orange", "pink", "purple", "red", "white", "yellow"],
+"shape":["rectangle", "square", "round", "round-top", "rount-top-with-extended-leg", "eyebrow", "eyebrow-with-extended-leg", "half-eye-brow", "half-eyebrow-with-extended-leg", "quarter-round", "triangle", "trapezoid", "ellipse", "half-ellipse", "octagon", "pentagon"],
+"window-trim-color":["white", "red", "yellow" ,"black", "blue", "brown", "cyan", "gray", "green", "megenta", "orange", "pink", "purple"],
+"size":[],
+"length":[],
+"width":[],
+"height":[],
+"direction":["to-bottom" , "to-left" , "to-right" , "to-up"],
+"texture":[],
+"material":[],
+"maintainance":["good", "normal", "bad", "very-bad"]
+}

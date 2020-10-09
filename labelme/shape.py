@@ -44,7 +44,7 @@ class Shape(object):
         flags=None,
         group_id=None,
         attributes={},
-        object_id = None,
+        object_id = "",
     ):
         self.label = label
         self.group_id = group_id

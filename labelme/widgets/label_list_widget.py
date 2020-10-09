@@ -72,6 +72,7 @@ class LabelListWidgetItem(QtGui.QStandardItem):
         super(LabelListWidgetItem, self).__init__()
         self.setText(text)
         self.setShape(shape)
+
         # if shape:
         #     print("shape.attributes:", shape.attributes)
 
@@ -128,6 +129,7 @@ class LabelListWidget(QtWidgets.QListView):
         self.doubleClicked.connect(self.itemDoubleClickedEvent)
         self.selectionModel().selectionChanged.connect(
             self.itemSelectionChangedEvent
+
         )
 
     def __len__(self):

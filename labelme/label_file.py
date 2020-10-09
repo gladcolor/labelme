@@ -76,15 +76,20 @@ class LabelFile(object):
             "flags",  # image level flags
             "imageHeight",
             "imageWidth",
+            "relationships",
         ]
         shape_keys = [
             "label",
+            "object_id",
             "points",
             "group_id",
             "shape_type",
             "flags",
             "attributes",
         ]
+
+
+
         try:
             with open(filename, "r") as f:
                 data = json.load(f)
@@ -122,6 +127,7 @@ class LabelFile(object):
             shapes = [
                 dict(
                     label=s["label"],
+                    object_id=s.get("object_id", ''),
                     points=s["points"],
                     shape_type=s.get("shape_type", "polygon"),
                     flags=s.get("flags", {}),
@@ -141,6 +147,8 @@ class LabelFile(object):
             if key not in keys:
                 otherData[key] = value
 
+        relationships = data.get("relationships", {})
+
         # Only replace data after everything is loaded.
         self.flags = flags
         self.shapes = shapes
@@ -148,6 +156,7 @@ class LabelFile(object):
         self.imageData = imageData
         self.filename = filename
         self.otherData = otherData
+        self.relationships = relationships
 
     @staticmethod
     def _check_image_height_and_width(imageData, imageHeight, imageWidth):
