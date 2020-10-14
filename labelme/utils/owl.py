@@ -10,7 +10,7 @@ def loadOWL(owl_file):
     return get_ontology(owl_file).load()
 
 
-onto = loadOWL(owl_file)
+# onto = loadOWL(owl_file)
 
 def getTextAttribtes(class_name):
     # r = onto.search("*status_maintainance")
@@ -46,13 +46,13 @@ def getDomains(class_name):
 # r = getTextAttribtes(class_name)
 
 
-class_name = "status_maintainance"
-class_name = "color"
-r = getDomains(class_name)
-print(str(r))
-
-r = getTextAttribtes(class_name)
-print(str(r))
+# class_name = "status_maintainance"
+# class_name = "color"
+# r = getDomains(class_name)
+# print(str(r))
+#
+# r = getTextAttribtes(class_name)
+# print(str(r))
 
 # l = onto.data_properties()
 # print(onto['status_maintainance'].domain)

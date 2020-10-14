@@ -33,8 +33,9 @@ class Shape(object):
     vertex_fill_color = DEFAULT_VERTEX_FILL_COLOR
     hvertex_fill_color = DEFAULT_HVERTEX_FILL_COLOR
     point_type = P_ROUND
-    point_size = 8
-    scale = 1.0
+    point_size = 4
+    # scale = 1.0
+    scale = 0.5  # huan
 
     def __init__(
         self,

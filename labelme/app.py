@@ -363,6 +363,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tr("Save labels to file"),
             enabled=False,
         )
+
+        initRelation = action(
+            self.tr("&initRelation"),
+            self.saveFile,
+            shortcuts["init_relation"],
+            "init_relation",
+            self.tr("init_relatione"),
+            enabled=False,
+        )
+
         saveAs = action(
             self.tr("&Save As"),
             self.saveFileAs,
@@ -443,6 +453,12 @@ class MainWindow(QtWidgets.QMainWindow):
         #     enabled=False,
         # )
 
+        add_relation = action(
+            self.tr("Add a relationship"),
+            self.add_relation,
+            # lambda: self.add_relation(),
+            enabled=True,
+        )
 
         createRectangleMode = action(
             self.tr("Create Rectangle"),
@@ -621,6 +637,17 @@ class MainWindow(QtWidgets.QMainWindow):
             checkable=True,
             enabled=False,
         )
+
+        initRelation = action(
+            self.tr("Init &Relation"),
+            self.setInitRelation,
+            shortcuts["init_relation"],
+            "init_relation",
+            self.tr("initialize_relation"),
+            checkable=True,
+            enabled=True,
+        )
+
         brightnessContrast = action(
             "&Brightness Contrast",
             self.brightnessContrast,
@@ -667,7 +694,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         fill_drawing.trigger()
 
-        # Lavel list context menu.
+        # Label list context menu.
         labelMenu = QtWidgets.QMenu()
         utils.addActions(labelMenu, (edit, delete))
         self.labelList.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -742,6 +769,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 addPointToEdge,
                 removePoint,
             ),
+
+            menuRelation=(
+                add_relation,
+            ),
+
             onLoadActive=(
                 close,
                 createMode,
@@ -825,6 +857,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 action("&Move here", self.moveShape),
             ),
         )
+
+        relationMenu = QtWidgets.QMenu()   # huan
+        utils.addActions(
+            relationMenu,
+            (
+                action("&Add relation", self.copyShape),
+            ),
+        )
+
+        # # Label list context menu.
+         # utils.addActions(labelMenu, (edit, delete))
+        # self.labelList.setContextMenuPolicy(Qt.CustomContextMenu)
+        # self.labelList.customContextMenuRequested.connect(
+        #     self.popLabelListMenu
+        # )
 
         self.tools = self.toolbar("Tools")
         # Menu buttons on Left
@@ -1476,6 +1523,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 imageWidth=self.image.width(),
                 otherData=self.otherData,
                 flags=flags,
+                relationships = self.relationships
             )
             self.labelFile = lf
             items = self.fileListWidget.findItems(
@@ -1489,6 +1537,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # self.filename = filename
             return True
         except LabelFileError as e:
+            logger.error(e, exc_info=True)
             self.errorMessage(
                 self.tr("Error saving label data"), self.tr("<b>%s</b>") % e
             )
@@ -1642,7 +1691,59 @@ class MainWindow(QtWidgets.QMainWindow):
     #     #
     #     #                                           QMessageBox.Ok | QMessageBox.Close, QMessageBox.Close)
 
+    def add_relation_things(self):
+        try:
+            # self.delete_empty_relation()
+            # self.labelList.blockSignals(True)
+            # self.relation_widget.blockSignals(True)
+
+            rowCnt = self.relation_widget.rowCount()
+
+            if rowCnt == 0:
+                self.relation_widget.setRowCount(1)
+                rowCnt = self.relation_widget.rowCount()
+                self.relation_widget.setItem(rowCnt - 1, 0, QTableWidgetItem(""))
+                self.relation_widget.setItem(rowCnt - 1, 1, QTableWidgetItem(""))
+                self.relation_widget.setItem(rowCnt - 1, 2, QTableWidgetItem(""))
+
+
+
+            subject = self.canvas.selectedShapes[0]
+            subject_text = str(subject.object_id) + " - " + subject.label
+
+            if self.relation_widget.item(rowCnt - 1, 1).text().strip() == "":
+                self.relation_widget.setItem(rowCnt - 1, 0, QTableWidgetItem(subject_text))
+            else:
+                self.relation_widget.setRowCount(rowCnt + 1)
+                rowCnt = self.relation_widget.rowCount()
+                self.relation_widget.setItem(rowCnt - 1, 0, QTableWidgetItem(subject_text))
+                self.relation_widget.setItem(rowCnt - 1, 1, QTableWidgetItem(""))
+                self.relation_widget.setItem(rowCnt - 1, 2, QTableWidgetItem(""))
+
+                # self.relation_widget.removeRow(rowCnt - 1)
+
+            if len(self.canvas.selectedShapes) == 2:
+                object = self.canvas.selectedShapes[1]
+                object_text  = str(object.object_id)  + " - " + object.label
+                self.relation_widget.setItem(rowCnt - 1, 2, QTableWidgetItem(object_text))
+
+            # self.relation_widget.setItem(rowCnt - 1, 1, QTableWidgetItem(""))
+
+
+            logger.info("add relation things.")
+
+            self.relation_widget.scrollToBottom()
+
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
+        self.labelList.blockSignals(False)
+
     def labelSelectionChanged(self, selected_list, deselected_list):
+
+
+        if len(self.canvas.selectedShapes) > 0:
+            self.add_relation_things()
 
         if len(selected_list) > 1:
             self.cleanAttributeDock_value()
@@ -1779,6 +1880,7 @@ class MainWindow(QtWidgets.QMainWindow):
             print("Error in showItemRelationships: ", e)
             logger.error(e, exc_info=True)
 
+        self.relation_widget.scrollToBottom()
         self.relation_widget.blockSignals(False)
 
     def labelItemChanged(self, item):
@@ -1970,6 +2072,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.actions.fitWindow.setChecked(False)
         self.zoomMode = self.FIT_WIDTH if value else self.MANUAL_ZOOM
         self.adjustScale()
+
+    def setInitRelation(self, value=True):
+        if value:
+            self.actions.initRelation.setChecked(False)
+            logger.info("setInitRelation")
 
     def onNewBrightnessContrast(self, qimage):
         self.canvas.loadPixmap(
@@ -2671,25 +2778,48 @@ class MainWindow(QtWidgets.QMainWindow):
         res = []
         try:
             for i in range(rowCnt):
-                subject_id, subject = self.relation_widget.item(i, 0).text().split(" - ")
-                predicate           = self.relation_widget.item(i, 1).text()
-                object_id,  object_ = self.relation_widget.item(i, 2).text().split(" - ")
+                info_str = f"reading tabel row: {i}"
+                logger.info(info_str)
+                predicate = self.relation_widget.item(i, 1).text()
+                if predicate == "":
+                    continue
+                subject_text = self.relation_widget.item(i, 0).text()
+                if subject_text == "":
+                    continue
+
+                subject_id, subject = subject_text.split(" - ")
+
+                object_text = self.relation_widget.item(i, 2).text()
+
+                if object_text == "":
+                    continue
+
+                object_id,  object_ = object_text.split(" - ")
                 relation = {}
 
                 relation["subject"] = {}
-                relation["subject"]["name"] = subject
-                relation["subject"]["object_id"] = subject_id
+                relation["subject"]["name"] = subject.strip()
+                relation["subject"]["object_id"] = subject_id.strip()
 
-                relation["predicate"] = predicate
+
+                relation["predicate"] = predicate.strip()
 
                 relation["object"] = {}
-                relation["object"]["name"] = object_
-                relation["object"]["object_id"] = object_id
+                relation["object"]["name"] = object_.strip()
+                relation["object"]["object_id"] = object_id.strip()
+                relation["relationship_id"] = i
 
-                res.append(relation)
-            return res
+                if (predicate.strip() != "") and (subject.strip() != "") and (object_.strip() != ""):
+                    res.append(relation)
+
         except Exception as e:
             logger.error(e, exc_info=True)
+            # continue
+
+            logger.info("Read relation dock.")
+
+        return res
+
 
     def rel_select_changed(self):
 
@@ -2804,7 +2934,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             self.relation_widget.blockSignals(False)
 
-            res = self.readRelationshipDock()
+
 
             try:
                 self.relation_widget.removeCellWidget(row, col)
@@ -2817,7 +2947,15 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception as e:
                 logger.error(e, exc_info= True)
 
+            res = self.readRelationshipDock()
             logger.info(res)
+            logger.info(len(res))
+
+            self.labelFile.relationships = res
+            self.relationships = res
+            logger.info(self.relationships)
+            self.setDirty()
+
         except Exception as e:
             logger.error(e, exc_info=True)
 
@@ -2845,6 +2983,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             if ret == qm.Yes:
                 self.relation_widget.removeRow(row)
+
         except Exception as e:
             logger.error(e, exc_info=True)
         logger.info("Deleted a row.")
@@ -2861,46 +3000,12 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(e, exc_info=True)
 
+    def add_relation(self):
+        logger.info("add a relationship. ")
 
 
-
-    # def loadAttributes(self, attributes):
-    #     s = []
-    #     for attri in attributes:
-    #         label = shape["label"]
-    #         points = shape["points"]
-    #         shape_type = shape["shape_type"]
-    #         flags = shape["flags"]
-    #         group_id = shape["group_id"]
-    #         other_data = shape["other_data"]
-    #         attributes = shape['attributes']
-    #
-    #         shape = Shape(
-    #             label=label, shape_type=shape_type, group_id=group_id, object_id=object,
-    #         )
-    #         for x, y in points:
-    #             shape.addPoint(QtCore.QPointF(x, y))
-    #         shape.close()
-    #
-    #         default_flags = {}
-    #         if self._config["label_flags"]:
-    #             for pattern, keys in self._config["label_flags"].items():
-    #                 if re.match(pattern, label):
-    #                     for key in keys:
-    #                         default_flags[key] = False
-    #         shape.flags = default_flags
-    #         shape.flags.update(flags)
-    #         shape.other_data = other_data
-    #
-    #         s.append(shape)
-    #     self.loadShapes(s)
-    #
-    #     self.attri_widget.blockSignals(True)
-    #
-    #     self.attri_widget.setRowCount(len(self.init_attributes_list))
-    #     for idx, attri in enumerate(self.init_attributes_list):
-    #         self.attri_widget.setItem(idx, 0, QTableWidgetItem(attri))
-    #     # QTableWidgetItem("Name")
-    #     # self.attri_widget.horizontalHeader().setStretchLastSection(True)
-    #     self.attri_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-    #     self.attri_widget.blockSignals(False)
+    def delete_empty_relation(self):
+        for i in range(self.relation_widget.rowCount()):
+            rowNum = self.relation_widget.rowCount() - 1 - i
+            if self.relation_widget.item(rowNum, 1).text().strip() == "":
+                self.relation_widget.removeRow(rowNum)

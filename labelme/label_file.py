@@ -185,32 +185,41 @@ class LabelFile(object):
         imageData=None,
         otherData=None,
         flags=None,
+        relationships=None,
     ):
-        if imageData is not None:
-            imageData = base64.b64encode(imageData).decode("utf-8")
-            imageHeight, imageWidth = self._check_image_height_and_width(
-                imageData, imageHeight, imageWidth
+        logger.info("Saving json...")
+
+        try:
+            if imageData is not None:
+                imageData = base64.b64encode(imageData).decode("utf-8")
+                imageHeight, imageWidth = self._check_image_height_and_width(
+                    imageData, imageHeight, imageWidth
+                )
+            if otherData is None:
+                otherData = {}
+            if flags is None:
+                flags = {}
+            data = dict(
+                version=__version__,
+                flags=flags,
+                shapes=shapes,
+                imagePath=imagePath,
+                imageData=imageData,
+                imageHeight=imageHeight,
+                imageWidth=imageWidth,
+                relationships=relationships,
             )
-        if otherData is None:
-            otherData = {}
-        if flags is None:
-            flags = {}
-        data = dict(
-            version=__version__,
-            flags=flags,
-            shapes=shapes,
-            imagePath=imagePath,
-            imageData=imageData,
-            imageHeight=imageHeight,
-            imageWidth=imageWidth,
-        )
-        for key, value in otherData.items():
-            assert key not in data
-            data[key] = value
+            for key, value in otherData.items():
+                assert key not in data
+                data[key] = value
+        except Exception as e:
+            logger.info(e, exc_info=True)
+
         try:
             with open(filename, "w") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             self.filename = filename
+            logger.info("Saved json.")
         except Exception as e:
             raise LabelFileError(e)
 
